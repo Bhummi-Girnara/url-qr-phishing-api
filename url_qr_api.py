@@ -1,13 +1,12 @@
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from pydantic import BaseModel
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 import joblib
 import pandas as pd
 import re
 import cv2
 import numpy as np
-import os
 from urllib.parse import urlparse
+from typing import Optional
 
 app = FastAPI(title="URL & QR Phishing Analysis API")
 
@@ -81,6 +80,8 @@ def extract_features(url):
     ]
 
 
+# ---------- MODEL PREDICTION ----------
+
 def predict_url(url):
     extracted = extract_features(url)
 
@@ -107,65 +108,73 @@ def predict_url(url):
     }
 
 
-# ---------- URL INPUT ----------
+# ---------- SINGLE ANALYSIS ENDPOINT ----------
 
-class URLRequest(BaseModel):
-    url: str
+@app.post("/analyze")
+async def analyze(
+    url: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None)
+):
 
+    # CASE 1: URL provided directly
+    if url:
+        result = predict_url(url)
 
-@app.post("/analyze-url")
-def analyze_url(request: URLRequest):
-    result = predict_url(request.url)
+        return {
+            "input_type": "url",
+            "analyzed_content": url,
+            **result
+        }
 
-    return {
-        "url": request.url,
-        **result
-    }
+    # CASE 2: QR image provided
+    if file:
+        contents = await file.read()
 
-
-# ---------- QR INPUT ----------
-
-@app.post("/analyze-qr")
-async def analyze_qr(file: UploadFile = File(...)):
-
-    contents = await file.read()
-
-    image_array = np.frombuffer(
-        contents,
-        np.uint8
-    )
-
-    image = cv2.imdecode(
-        image_array,
-        cv2.IMREAD_COLOR
-    )
-
-    if image is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid image file."
+        image_array = np.frombuffer(
+            contents,
+            np.uint8
         )
 
-    detector = cv2.QRCodeDetector()
-
-    decoded_data, points, _ = detector.detectAndDecode(image)
-
-    if not decoded_data:
-        raise HTTPException(
-            status_code=400,
-            detail="Could not detect or decode a QR code."
+        image = cv2.imdecode(
+            image_array,
+            cv2.IMREAD_COLOR
         )
 
-    result = predict_url(decoded_data)
+        if image is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid image file."
+            )
 
-    return {
-        "decoded_content": decoded_data,
-        **result
-    }
+        detector = cv2.QRCodeDetector()
 
+        decoded_data, points, _ = detector.detectAndDecode(image)
+
+        if not decoded_data:
+            raise HTTPException(
+                status_code=400,
+                detail="Could not detect or decode a QR code."
+            )
+
+        result = predict_url(decoded_data)
+
+        return {
+            "input_type": "qr",
+            "analyzed_content": decoded_data,
+            **result
+        }
+
+    raise HTTPException(
+        status_code=400,
+        detail="Provide either a URL or a QR image."
+    )
+
+
+# ---------- HOME ----------
 
 @app.get("/")
 def home():
     return {
         "message": "URL and QR Phishing Analysis API is running"
     }
+}
