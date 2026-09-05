@@ -177,4 +177,3 @@ def home():
     return {
         "message": "URL and QR Phishing Analysis API is running"
     }
-}
