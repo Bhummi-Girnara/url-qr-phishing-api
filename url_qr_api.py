@@ -1,5 +1,6 @@
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 import joblib
 import pandas as pd
 import re
@@ -9,6 +10,16 @@ from urllib.parse import urlparse
 from typing import Optional
 
 app = FastAPI(title="URL & QR Phishing Analysis API")
+
+# ---------- CORS ----------
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Load model and feature order
 model = joblib.load("url_qr_phishing_model.pkl")
